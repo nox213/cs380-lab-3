@@ -1,5 +1,10 @@
 #include <stdio.h>
 
+int q;
+int t;
+int c = 3;
+double d;
+
 int add (int a, int b)
 {
 	printf("Numbers are added together\n");

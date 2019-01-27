@@ -13,7 +13,7 @@ int main(int argc, char *argv[])
 {
 	Elf64_Ehdr elf_header;
 	Elf64_Phdr *ph;
-	int fd;
+	int fd, poff;
 
 	if (argc != 2) {
 		fprintf(stderr, "./apager exe_file\n");
@@ -36,6 +36,9 @@ int main(int argc, char *argv[])
 	}
 
 	show_elf_header(&elf_header);
+
+	poff = elf_header.e_phoff;
+	lseek(fd, 0, SEEK_SET);
 
 	exit (EXIT_SUCCESS);
 }
