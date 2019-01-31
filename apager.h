@@ -20,11 +20,12 @@
 #define arch_align_stack(p) ((unsigned long)(p) & ~0xf)
 
 void show_elf_header(Elf64_Ehdr *elf_header);
-int load_elf_binary(int fd, Elf64_Ehdr *ep);
+int load_elf_binary(int fd, Elf64_Ehdr *ep, int argc, char *argv[]);
 int elf_map(Elf64_Addr addr, unsigned long total_size, int prot, int type, 
 		int fd, Elf64_Phdr *pp);
 int map_bss(unsigned long start, unsigned long end, int prot);
-int create_elf_tables(Elf64_Ehdr *ep, unsigned long load_addr);
+int create_elf_tables(Elf64_Ehdr *ep, unsigned long load_addr, 
+		int argc, char *argv[]);
 int init_stack(int argc, char *argv[]);
 
 #endif

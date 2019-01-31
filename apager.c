@@ -9,7 +9,8 @@
 #include <unistd.h>
 #include "apager.h"
 
-void *sp, *top;
+Elf64_Addr *sp, *top;
+unsigned long arg_start, arg_end, env_start, env_end;
 
 int main(int argc, char *argv[])
 {
@@ -43,7 +44,7 @@ int main(int argc, char *argv[])
 		goto out;
 
 	printf("asdf\n");
-	load_elf_binary(fd, &elf_header);
+	load_elf_binary(fd, &elf_header, argc, argv);
 
 out:
 	close(fd);
@@ -63,7 +64,7 @@ void show_elf_header(Elf64_Ehdr *ep)
 	printf("e_phnum: %u\n", ep->e_phnum);
 }
 
-int load_elf_binary(int fd, Elf64_Ehdr *ep)
+int load_elf_binary(int fd, Elf64_Ehdr *ep, int argc, char *argv[])
 {
 	Elf64_Phdr phdr;
 	Elf64_Addr elf_entry;
@@ -178,9 +179,44 @@ int padzero(unsigned long elf_bss)
 	return 0;
 }
 
-int create_elf_tables(Elf64_Ehdr *ep, unsigned long load_addr)
+int create_elf_tables(Elf64_Ehdr *ep, unsigned long load_addr, 
+		int argc, char *argv[])
 {
-	arch_align_stack(sp);
+	int items;
+	int i;
+	unsigned long p;
+
+	sp = arch_align_stack(sp);
+
+	items = (argc + 1) + (3) + 1;
+	sp = STACK_ROUND(sp, items);
+
+	/* Populate list of argv pointers back to argv strings. */
+	p = arg_start;
+	for (i = 0; i < argc - 1; i++) {
+		size_t len;
+
+		memcpy(sp, &p, sizeof(p));
+		len = strlen((char *) p);
+		sp++;
+		p += len;
+	}
+	*sp = NULL;
+	sp++;
+
+	/* Populate list of envp pointers back to envp strings. */
+	p = env_start;
+	for (i = 0; i < 2; i++) {
+		size_t len;
+
+		memcpy(sp, &p, sizeof(p));
+		len = strlen((char *) p);
+		p += len;
+	}
+	*sp = NULL;
+	sp++;
+
+	/* Put the elf_info on the stack in the right place.  */
 }
 
 int init_stack(int argc, char *argv[])
@@ -201,15 +237,21 @@ int init_stack(int argc, char *argv[])
 	/* push env to stack */
 	len = strlen("2");
 	sp = ((char *) sp) - len;
+	env_end = sp;
 	memcpy(sp, "2", len);
 	len = strlen("1");
 	sp = ((char *) sp) - len;
 	memcpy(sp, "1", len);
+	env_start = sp;
 
 	/* push args to stack */
-	for (i = argc - 1; i >= 0; i--) {
+	for (i = argc - 1; i > 0; i--) {
 		len = strlen(argv[i]);
 		sp = ((char *) sp) - len;
+		if (i == argc - 1)
+			arg_end = sp;
+		else if (i == 1)
+			arg_start = sp;
 		memcpy(sp, argv[i], len);
 	}
 
