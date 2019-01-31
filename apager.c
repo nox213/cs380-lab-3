@@ -9,7 +9,7 @@
 #include <unistd.h>
 #include "apager.h"
 
-Elf64_Addr *sp, *top;
+Elf64_Addr *sp, *top, *stack_start;
 unsigned long arg_start, arg_end, env_start, env_end;
 
 int main(int argc, char *argv[])
@@ -43,7 +43,6 @@ int main(int argc, char *argv[])
 	if (init_stack(argc, argv) < 0)
 		goto out;
 
-	printf("asdf\n");
 	load_elf_binary(fd, &elf_header, argc, argv);
 
 out:
@@ -132,6 +131,8 @@ int load_elf_binary(int fd, Elf64_Ehdr *ep, int argc, char *argv[])
 
 	elf_entry = ep->e_entry;
 
+	create_elf_tables(ep, 0, argc, argv);
+
 	return 0;
 }
 
@@ -190,16 +191,20 @@ int create_elf_tables(Elf64_Ehdr *ep, unsigned long load_addr,
 
 	items = (argc + 1) + (3) + 1;
 	sp = STACK_ROUND(sp, items);
+	stack_start = sp;
+
+	/* Now, let's put argc (and argv, envp if appropriate) on the stack */
 
 	/* Populate list of argv pointers back to argv strings. */
 	p = arg_start;
 	for (i = 0; i < argc - 1; i++) {
 		size_t len;
 
-		memcpy(sp, &p, sizeof(p));
+		*sp = p;
+		fprintf(stderr, "sp: %s p: %s\n", (char *) *sp, (char *) p);
 		len = strlen((char *) p);
 		sp++;
-		p += len;
+		p += len + 1;
 	}
 	*sp = NULL;
 	sp++;
@@ -228,6 +233,7 @@ int init_stack(int argc, char *argv[])
 		fprintf("malloc error in %s\n", __func__);
 		return -1;
 	}
+	memset(sp, 0, STACK_SIZE);
 	top = sp;
 
 	sp = ((char *) sp) + STACK_SIZE;
@@ -235,25 +241,31 @@ int init_stack(int argc, char *argv[])
 	STACK_ADD(sp, 1); 
 
 	/* push env to stack */
-	len = strlen("2");
-	sp = ((char *) sp) - len;
+	len = strlen("ENVVAR2=2");
+	sp = ((char *) sp) - (len + 1);
 	env_end = sp;
-	memcpy(sp, "2", len);
-	len = strlen("1");
-	sp = ((char *) sp) - len;
-	memcpy(sp, "1", len);
+	memcpy(sp, "ENVVAR2=2", len + 1);
+	len = strlen("ENVVAR1=1");
+	sp = ((char *) sp) - (len + 1);
+	memcpy(sp, "ENVVAR=1", len + 1);
 	env_start = sp;
 
 	/* push args to stack */
 	for (i = argc - 1; i > 0; i--) {
 		len = strlen(argv[i]);
-		sp = ((char *) sp) - len;
+		sp = ((char *) sp) - (len + 1);
 		if (i == argc - 1)
 			arg_end = sp;
-		else if (i == 1)
+		if (i == 1)
 			arg_start = sp;
-		memcpy(sp, argv[i], len);
+		memcpy(sp, argv[i], len + 1);
+		printf("%s\n", sp);
 	}
 
 	return 0;
+}
+
+int jump_to_entry(void)
+{
+
 }
