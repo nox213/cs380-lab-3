@@ -65,12 +65,17 @@ int load_elf_binary(int fd, Elf64_Ehdr *ep)
 {
 	Elf64_Phdr phdr;
 	Elf64_Addr elf_entry;
+	unsigned long elf_bss, elf_brk;
+	int bss_prot = 0;
 	int i;
 
 	memset(&phdr, 0, sizeof(Elf64_Phdr));
 	lseek(fd, ep->e_phoff, SEEK_SET);
+	elf_bss = 0;
+	elf_brk = 0;
 	for (i = 0; i < ep->e_phnum; i++) {
 		int elf_prot = 0, elf_flags;
+		unsigned long k;
 		Elf64_Addr vaddr;
 
 		if (read(fd, &phdr, sizeof(Elf64_Phdr)) < 0) {
@@ -80,6 +85,17 @@ int load_elf_binary(int fd, Elf64_Ehdr *ep)
 		
 		if (phdr.p_type != PT_LOAD)
 			continue;
+
+		if (elf_brk > elf_bss) {
+			unsigned long nbyte;
+			
+			if (map_bss(elf_bss, elf_brk, bss_prot) < 0) {
+				fprintf(stderr, "map_bss error\n");
+				return -1;
+			}
+
+			padzero(elf_bss);
+		}
 
 		if (phdr.p_flags & PF_R)
 			elf_prot |= PROT_READ;
@@ -96,7 +112,22 @@ int load_elf_binary(int fd, Elf64_Ehdr *ep)
 			fprintf(stderr, "elf_map error\n");
 			return -1;
 		}
+		
+		k = phdr.p_vaddr + phdr.p_filesz;
+		if (k > elf_bss)
+			elf_bss = k;
+
+		k = phdr.p_vaddr + phdr.p_memsz;
+		if (k > elf_brk) {
+			bss_prot = elf_prot;
+			elf_brk = k;
+		}
 	}
+
+	map_bss(elf_bss, elf_brk, bss_prot);
+	padzero(efl_bss);
+
+	elf_entry = ep->e_entry;
 
 	return 0;
 }
@@ -116,3 +147,31 @@ int elf_map(Elf64_Addr addr, unsigned long total_size, int prot, int type,
 	return mmap(addr, size, prot, type, fd, off);
 }
 
+int map_bss(unsigned long start, unsigned long end, int prot)
+{
+	int size;
+	int type;
+
+	start = ELF_PAGEALIGN(start);
+	size = end - ELF_PAGEALIGN(end);
+	end = ELF_PAGEALIGN(end);
+	type = MAP_FIXED | MAP_ANONYMOUS | MAP_PRIVATE;
+	if (end > start) {
+		return mmap(end, size, prot, type, -1, 0);
+	}
+
+	return 0;
+}
+
+int padzero(unsigned long elf_bss)
+{
+	unsigned long nbyte;
+
+	nbyte = ELF_PAGEOFFSET(elf_bss);
+	if (nbyte) {
+		nbyte = ELF_MIN_ALIGN - nbyte;
+		memset((void *) elf_bss, 0, nbyte);
+	}
+
+	return 0;
+}

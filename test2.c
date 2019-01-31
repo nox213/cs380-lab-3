@@ -7,6 +7,9 @@ double d;
 
 int add (int a, int b)
 {
+	static int time;
+
+	time++;
 	printf("Numbers are added together\n");
 	
 	return a + b;
