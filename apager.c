@@ -9,7 +9,7 @@
 #include <unistd.h>
 #include "apager.h"
 
-void *sp;
+void *sp, *top;
 
 int main(int argc, char *argv[])
 {
@@ -42,9 +42,12 @@ int main(int argc, char *argv[])
 	if (init_stack(argc, argv) < 0)
 		goto out;
 
+	printf("asdf\n");
+	load_elf_binary(fd, &elf_header);
+
 out:
 	close(fd);
-	free(sp);
+	free(top);
 	exit (EXIT_SUCCESS);
 }
 
@@ -177,6 +180,7 @@ int padzero(unsigned long elf_bss)
 
 int create_elf_tables(Elf64_Ehdr *ep, unsigned long load_addr)
 {
+	arch_align_stack(sp);
 }
 
 int init_stack(int argc, char *argv[])
@@ -188,22 +192,23 @@ int init_stack(int argc, char *argv[])
 		fprintf("malloc error in %s\n", __func__);
 		return -1;
 	}
+	top = sp;
 
 	sp = ((char *) sp) + STACK_SIZE;
 	/* NULL pointer */
 	STACK_ADD(sp, 1); 
 
 	/* push env to stack */
-	len = strlen("1");
-	sp = ((char *) sp) - len;
-	memcpy(sp, "1", len);
 	len = strlen("2");
 	sp = ((char *) sp) - len;
 	memcpy(sp, "2", len);
+	len = strlen("1");
+	sp = ((char *) sp) - len;
+	memcpy(sp, "1", len);
 
 	/* push args to stack */
-	for (i = 0; i < argc; i++) {
-		len = argv[i];
+	for (i = argc - 1; i >= 0; i--) {
+		len = strlen(argv[i]);
 		sp = ((char *) sp) - len;
 		memcpy(sp, argv[i], len);
 	}

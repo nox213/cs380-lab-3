@@ -17,6 +17,8 @@
 	(((unsigned long) (sp - items)) &~ 15UL)
 #define STACK_ALLOC(sp, len) ({ sp -= len ; sp; })
 
+#define arch_align_stack(p) ((unsigned long)(p) & ~0xf)
+
 void show_elf_header(Elf64_Ehdr *elf_header);
 int load_elf_binary(int fd, Elf64_Ehdr *ep);
 int elf_map(Elf64_Addr addr, unsigned long total_size, int prot, int type, 
