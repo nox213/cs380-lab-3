@@ -9,6 +9,8 @@
 #include <unistd.h>
 #include "apager.h"
 
+void *sp;
+
 int main(int argc, char *argv[])
 {
 	Elf64_Ehdr elf_header;
@@ -37,15 +39,12 @@ int main(int argc, char *argv[])
 
 	show_elf_header(&elf_header);
 
-	poff = elf_header.e_phoff;
-	lseek(fd, poff, SEEK_SET);
-	read(fd, &phdr, sizeof(Elf64_Phdr));
-	printf("%p\n", mmap(phdr.p_vaddr + 0x1000, phdr.p_filesz, 
-				PROT_READ, MAP_PRIVATE | MAP_FIXED,
-				fd, phdr.p_offset));
+	if (init_stack(argc, argv) < 0)
+		goto out;
 
 out:
 	close(fd);
+	free(sp);
 	exit (EXIT_SUCCESS);
 }
 
@@ -125,7 +124,7 @@ int load_elf_binary(int fd, Elf64_Ehdr *ep)
 	}
 
 	map_bss(elf_bss, elf_brk, bss_prot);
-	padzero(efl_bss);
+	padzero(elf_bss);
 
 	elf_entry = ep->e_entry;
 
@@ -171,6 +170,42 @@ int padzero(unsigned long elf_bss)
 	if (nbyte) {
 		nbyte = ELF_MIN_ALIGN - nbyte;
 		memset((void *) elf_bss, 0, nbyte);
+	}
+
+	return 0;
+}
+
+int create_elf_tables(Elf64_Ehdr *ep, unsigned long load_addr)
+{
+}
+
+int init_stack(int argc, char *argv[])
+{
+	size_t len;
+	int i;
+
+	if ((sp = malloc(STACK_SIZE)) == NULL) {
+		fprintf("malloc error in %s\n", __func__);
+		return -1;
+	}
+
+	sp = ((char *) sp) + STACK_SIZE;
+	/* NULL pointer */
+	STACK_ADD(sp, 1); 
+
+	/* push env to stack */
+	len = strlen("1");
+	sp = ((char *) sp) - len;
+	memcpy(sp, "1", len);
+	len = strlen("2");
+	sp = ((char *) sp) - len;
+	memcpy(sp, "2", len);
+
+	/* push args to stack */
+	for (i = 0; i < argc; i++) {
+		len = argv[i];
+		sp = ((char *) sp) - len;
+		memcpy(sp, argv[i], len);
 	}
 
 	return 0;
