@@ -9,21 +9,20 @@
 #include <unistd.h>
 #include "apager.h"
 
-Elf64_Addr *sp, *top, *stack_start;
-unsigned long arg_start, arg_end, env_start, env_end;
+char *sp, *top, *stack_bottom;
+char *arg_start, *arg_end, *env_start, *env_end;
 
-int main(int argc, char *argv[])
+int main(int argc, char *argv[], char *envp[])
 {
 	Elf64_Ehdr elf_header;
-	Elf64_Phdr phdr;
-	int fd, poff;
+	int fd;
 
 	if (argc < 2) {
 		fprintf(stderr, "./apager exe_file\n");
 		exit(EXIT_FAILURE);
 	}
 
-	if ((fd = open(argv[1], O_RDONLY)) < 0) {
+	if ((fd = open(argv[1], O_RDWR)) < 0) {
 		fprintf(stderr, "Fail to open loaded file\n");
 		goto out;
 	}
@@ -43,11 +42,10 @@ int main(int argc, char *argv[])
 	if (init_stack(argc, argv) < 0)
 		goto out;
 
-	load_elf_binary(fd, &elf_header, argc, argv);
+	load_elf_binary(fd, &elf_header, argc, envp);
 
 out:
 	close(fd);
-	free(top);
 	exit (EXIT_SUCCESS);
 }
 
@@ -55,15 +53,15 @@ void show_elf_header(Elf64_Ehdr *ep)
 {
 	printf("e_ident: %s\n", ep->e_ident);
 	printf("e_entry: %p\n", ep->e_entry);
-	printf("e_phoff: %d\n", ep->e_phoff);
-	printf("e_shoff: %d\n", ep->e_shoff);
-	printf("sizeof Elf64_Ehdr: %u\n", sizeof(Elf64_Ehdr));
+	printf("e_phoff: %lu\n", ep->e_phoff);
+	printf("e_shoff: %lu\n", ep->e_shoff);
+	printf("sizeof Elf64_Ehdr: %lu\n", sizeof(Elf64_Ehdr));
 	printf("e_ehsize: %u\n", ep->e_ehsize);
 	printf("e_phentsize: %u\n", ep->e_phentsize);
 	printf("e_phnum: %u\n", ep->e_phnum);
 }
 
-int load_elf_binary(int fd, Elf64_Ehdr *ep, int argc, char *argv[])
+int load_elf_binary(int fd, Elf64_Ehdr *ep, int argc, char *envp[])
 {
 	Elf64_Phdr phdr;
 	Elf64_Addr elf_entry;
@@ -71,7 +69,6 @@ int load_elf_binary(int fd, Elf64_Ehdr *ep, int argc, char *argv[])
 	int bss_prot = 0;
 	int i;
 
-	memset(&phdr, 0, sizeof(Elf64_Phdr));
 	lseek(fd, ep->e_phoff, SEEK_SET);
 	elf_bss = 0;
 	elf_brk = 0;
@@ -80,6 +77,7 @@ int load_elf_binary(int fd, Elf64_Ehdr *ep, int argc, char *argv[])
 		unsigned long k;
 		Elf64_Addr vaddr;
 
+		memset(&phdr, 0, sizeof(Elf64_Phdr));
 		if (read(fd, &phdr, sizeof(Elf64_Phdr)) < 0) {
 			fprintf(stderr, "read erorr on phdr\n");
 			return -1;
@@ -89,8 +87,6 @@ int load_elf_binary(int fd, Elf64_Ehdr *ep, int argc, char *argv[])
 			continue;
 
 		if (elf_brk > elf_bss) {
-			unsigned long nbyte;
-			
 			if (map_bss(elf_bss, elf_brk, bss_prot) < 0) {
 				fprintf(stderr, "map_bss error\n");
 				return -1;
@@ -126,20 +122,23 @@ int load_elf_binary(int fd, Elf64_Ehdr *ep, int argc, char *argv[])
 		}
 	}
 
-	map_bss(elf_bss, elf_brk, bss_prot);
+	if (map_bss(elf_bss, elf_brk, bss_prot) < 0) {
+		fprintf(stderr, "bss map error\n");
+		return -1;
+	}
 	padzero(elf_bss);
 
 	elf_entry = ep->e_entry;
 
-	create_elf_tables(ep, 0, argc, argv);
+	create_elf_tables(ep, 0, argc, envp);
+	jump_to_entry(elf_entry);
 
-	return 0;
+	return elf_entry;
 }
 
-int elf_map(Elf64_Addr addr, unsigned long total_size, int prot, int type, 
+void *elf_map(Elf64_Addr addr, unsigned long total_size, int prot, int type, 
 		int fd, Elf64_Phdr *pp)
 {
-	Elf64_Addr map_addr;
 	unsigned long size = pp->p_filesz + ELF_PAGEOFFSET(pp->p_vaddr);
 	unsigned long off = pp->p_offset - ELF_PAGEOFFSET(pp->p_vaddr);
 	addr = ELF_PAGESTART(addr);
@@ -148,20 +147,18 @@ int elf_map(Elf64_Addr addr, unsigned long total_size, int prot, int type,
 	if (!size)
 		return addr;
 	
-	return mmap(addr, size, prot, type, fd, off);
+	return mmap((void *) addr, size, prot, type, fd, off);
 }
 
 int map_bss(unsigned long start, unsigned long end, int prot)
 {
-	int size;
 	int type;
 
 	start = ELF_PAGEALIGN(start);
-	size = end - ELF_PAGEALIGN(end);
 	end = ELF_PAGEALIGN(end);
 	type = MAP_FIXED | MAP_ANONYMOUS | MAP_PRIVATE;
 	if (end > start) {
-		return mmap(end, size, prot, type, -1, 0);
+		return (int) mmap((void *) start, end - start, prot, type, -1, 0);
 	}
 
 	return 0;
@@ -181,91 +178,128 @@ int padzero(unsigned long elf_bss)
 }
 
 int create_elf_tables(Elf64_Ehdr *ep, unsigned long load_addr, 
-		int argc, char *argv[])
+		int argc, char *envp[])
 {
 	int items;
 	int i;
-	unsigned long p;
+	char *p;
+	Elf64_auxv_t elf_info[AT_VECTOR_SIZE];
+	Elf64_auxv_t *auxv;
+	int ei_index = 0;
 
-	sp = arch_align_stack(sp);
+	memset(elf_info, 0, sizeof(elf_info));
+	sp = (char *) arch_align_stack(sp);
+
+
+	/* Copy Loaders AT_VECTOR */
+	while (*envp++ != NULL)
+		;
+	for (auxv = (Elf64_auxv_t *) envp; auxv->a_type != AT_NULL;
+			auxv++, ei_index++) {
+		elf_info[ei_index] = *auxv;
+		if (auxv->a_type == AT_PHDR)
+			elf_info[ei_index].a_un.a_val = 0;
+
+	}
+
+	ei_index += 2;
+	sp = (char *) STACK_ADD(sp, ei_index * 2);
 
 	items = (argc + 1) + (3) + 1;
-	sp = STACK_ROUND(sp, items);
-	stack_start = sp;
+	sp = (char *) STACK_ROUND(sp, items);
+	stack_bottom = sp;
+
+
 
 	/* Now, let's put argc (and argv, envp if appropriate) on the stack */
+	*((long *) sp) = (long) argc - 1;
+	sp += 8;
+
 
 	/* Populate list of argv pointers back to argv strings. */
 	p = arg_start;
 	for (i = 0; i < argc - 1; i++) {
 		size_t len;
 
-		*sp = p;
-		fprintf(stderr, "sp: %s p: %s\n", (char *) *sp, (char *) p);
-		len = strlen((char *) p);
-		sp++;
+		*((unsigned long *) sp) = (unsigned long) p;
+		len = strnlen(p, MAX_ARG_STRLEN);
+		sp += 8;
 		p += len + 1;
 	}
-	*sp = NULL;
-	sp++;
+	*((unsigned long *) sp) = NULL;
+	sp += 8;
+
 
 	/* Populate list of envp pointers back to envp strings. */
 	p = env_start;
 	for (i = 0; i < 2; i++) {
 		size_t len;
 
-		memcpy(sp, &p, sizeof(p));
-		len = strlen((char *) p);
+		*((unsigned long *) sp) = (unsigned long) p;
+		len = strnlen(p, MAX_ARG_STRLEN);
+		sp += 8;
 		p += len;
 	}
-	*sp = NULL;
-	sp++;
+	*((unsigned long *) sp) = NULL;
+	sp += 8;
 
 	/* Put the elf_info on the stack in the right place.  */
+	memcpy(sp, elf_info, sizeof(Elf64_auxv_t) * ei_index);
+
+	return 0;
 }
 
 int init_stack(int argc, char *argv[])
 {
 	size_t len;
 	int i;
+	int prot = 0, flags = 0;;
 
-	if ((sp = malloc(STACK_SIZE)) == NULL) {
-		fprintf("malloc error in %s\n", __func__);
+	prot = PROT_READ | PROT_WRITE;
+	flags = MAP_FIXED | MAP_ANONYMOUS | MAP_GROWSDOWN | MAP_PRIVATE;
+	sp = mmap((void *) STACK_START, STACK_SIZE, prot, flags, -1 ,0);
+	if (sp == MAP_FAILED) {
+		fprintf(stderr, "mmap error in %s\n", __func__);
 		return -1;
 	}
 	memset(sp, 0, STACK_SIZE);
-	top = sp;
-
-	sp = ((char *) sp) + STACK_SIZE;
+	sp = (Elf64_Addr) STACK_TOP;
 	/* NULL pointer */
 	STACK_ADD(sp, 1); 
 
 	/* push env to stack */
-	len = strlen("ENVVAR2=2");
-	sp = ((char *) sp) - (len + 1);
+	len = strnlen("ENVVAR2=2", MAX_ARG_STRLEN);
+	sp -= (len + 1);
 	env_end = sp;
 	memcpy(sp, "ENVVAR2=2", len + 1);
-	len = strlen("ENVVAR1=1");
-	sp = ((char *) sp) - (len + 1);
+	len = strnlen("ENVVAR1=1", MAX_ARG_STRLEN);
+	sp -= (len + 1);
 	memcpy(sp, "ENVVAR=1", len + 1);
 	env_start = sp;
 
 	/* push args to stack */
 	for (i = argc - 1; i > 0; i--) {
-		len = strlen(argv[i]);
+		len = strnlen(argv[i], MAX_ARG_STRLEN);
 		sp = ((char *) sp) - (len + 1);
 		if (i == argc - 1)
 			arg_end = sp;
 		if (i == 1)
 			arg_start = sp;
 		memcpy(sp, argv[i], len + 1);
-		printf("%s\n", sp);
 	}
 
 	return 0;
 }
 
-int jump_to_entry(void)
+int jump_to_entry(Elf64_Addr elf_entry)
 {
+	asm("movq $0, %rax");
+	asm("movq $0, %rbx");
+	asm("movq $0, %rcx");
+	asm("movq $0, %rdx");
+	asm("movq %0, %%rsp" : : "r" (stack_bottom));
+	asm("jmp *%0" : : "c" (elf_entry));
 
+	printf("never reached\n");
+	return 0;
 }

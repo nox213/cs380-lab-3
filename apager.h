@@ -4,9 +4,15 @@
 #define	ELFMAG		"\177ELF"
 #define	SELFMAG		4
 
-#define STACK_SIZE	20000
+#define STACK_SIZE	(PAGE_SIZE * 10)
+#define STACK_START	0x10000000	
+#define STACK_TOP	(STACK_START + STACK_SIZE)
 #define PAGE_SIZE	4096
 #define ELF_MIN_ALIGN	PAGE_SIZE
+#define MAX_ARG_STRLEN	PAGE_SIZE
+
+#define AT_VECTOR_SIZE_BASE	20
+#define AT_VECTOR_SIZE (2*(AT_VECTOR_SIZE_BASE + 1))
 
 #define ELF_PAGESTART(_v) ((_v) & ~(unsigned long)(ELF_MIN_ALIGN-1))
 #define ELF_PAGEOFFSET(_v) ((_v) & (ELF_MIN_ALIGN-1))
@@ -14,18 +20,20 @@
 
 #define STACK_ADD(sp, items) ((Elf64_Addr *)(sp) - (items))
 #define STACK_ROUND(sp, items) \
-	(((unsigned long) (sp - items)) &~ 15UL)
+	(((unsigned long) ((Elf64_Addr *) (sp) - (items))) &~ 15UL)
 #define STACK_ALLOC(sp, len) ({ sp -= len ; sp; })
 
 #define arch_align_stack(p) ((unsigned long)(p) & ~0xf)
 
 void show_elf_header(Elf64_Ehdr *elf_header);
-int load_elf_binary(int fd, Elf64_Ehdr *ep, int argc, char *argv[]);
-int elf_map(Elf64_Addr addr, unsigned long total_size, int prot, int type, 
+int load_elf_binary(int fd, Elf64_Ehdr *ep, int argc, char *envp[]);
+void *elf_map(Elf64_Addr addr, unsigned long total_size, int prot, int type, 
 		int fd, Elf64_Phdr *pp);
 int map_bss(unsigned long start, unsigned long end, int prot);
+int padzero(unsigned long elf_bss);
 int create_elf_tables(Elf64_Ehdr *ep, unsigned long load_addr, 
-		int argc, char *argv[]);
+		int argc, char *envp[]);
 int init_stack(int argc, char *argv[]);
+int jump_to_entry(Elf64_Addr elf_entry);
 
 #endif
