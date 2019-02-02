@@ -37,7 +37,7 @@ int main(int argc, char *argv[], char *envp[])
 		goto out;
 	}
 
-	show_elf_header(&elf_header);
+	//show_elf_header(&elf_header);
 
 	if (init_stack(argc, argv) < 0)
 		goto out;
