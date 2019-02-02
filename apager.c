@@ -126,7 +126,7 @@ int load_elf_binary(int fd, Elf64_Ehdr *ep, int argc, char *envp[])
 
 		vaddr = phdr.p_vaddr;
 
-		if (elf_map(vaddr, 0, elf_prot, elf_flags, fd, &phdr) < 0) {
+		if (elf_map(vaddr, elf_prot, elf_flags, fd, &phdr) < 0) {
 			fprintf(stderr, "elf_map error\n");
 			return -1;
 		}
@@ -151,13 +151,13 @@ int load_elf_binary(int fd, Elf64_Ehdr *ep, int argc, char *envp[])
 
 	elf_entry = ep->e_entry;
 
-	create_elf_tables(ep, 0, argc, envp);
+	create_elf_tables(argc, envp);
 	jump_to_entry(elf_entry);
 
 	return 0;
 }
 
-void *elf_map(Elf64_Addr addr, unsigned long total_size, int prot, int type, 
+void *elf_map(Elf64_Addr addr, int prot, int type, 
 		int fd, Elf64_Phdr *pp)
 {
 	unsigned long size = pp->p_filesz + ELF_PAGEOFFSET(pp->p_vaddr);
@@ -166,7 +166,7 @@ void *elf_map(Elf64_Addr addr, unsigned long total_size, int prot, int type,
 	size = ELF_PAGEALIGN(size);
 
 	if (!size)
-		return addr;
+		return (void *) addr;
 	
 	return mmap((void *) addr, size, prot, type, fd, off);
 }
@@ -198,8 +198,7 @@ int padzero(unsigned long elf_bss)
 	return 0;
 }
 
-int create_elf_tables(Elf64_Ehdr *ep, unsigned long load_addr, 
-		int argc, char *envp[])
+int create_elf_tables(int argc, char *envp[])
 {
 	int items;
 	int i;
