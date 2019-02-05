@@ -24,6 +24,11 @@ int main(int argc, char *argv[])
 	for (int i = 0; i < a; i++)
 		printf("%d\n", rand());
 
+	free(p);
+	p = NULL;
+
+	*p = 77;
+
 	return 0;
 }
 

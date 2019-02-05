@@ -1,24 +1,28 @@
 #include <stdio.h>
+#include <stdbool.h>
 #include <string.h>
 #include <stdlib.h>
+#include <signal.h>
 #include <elf.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include "apager.h"
+#include "dpager.h"
 
 char *sp, *top, *stack_bottom;
 char *arg_start, *arg_end, *env_start, *env_end;
+Elf64_Phdr ph_table[PH_TABLE_SIZE];
+int fd;
 
 int main(int argc, char *argv[], char *envp[])
 {
 	Elf64_Ehdr elf_header;
 	Elf64_auxv_t *auxv;
 	Elf64_Addr loader_entry;
+	struct sigaction act;
 	char **p;
-	int fd;
 
 	if (argc < 2) {
 		fprintf(stderr, "./apager exe_file\n");
@@ -62,6 +66,10 @@ int main(int argc, char *argv[], char *envp[])
 	if (init_stack(argc, argv) < 0)
 		goto out;
 
+	memset(&act, 0, sizeof(act));
+	act.sa_handler = segv_handler;
+	act.sa_flags = SA_SIGINFO | SA_RESTART;
+	sigaction(SIGSEGV, &act, NULL);
 	load_elf_binary(fd, &elf_header, argc, envp);
 
 out:
@@ -92,60 +100,55 @@ int load_elf_binary(int fd, Elf64_Ehdr *ep, int argc, char *envp[])
 	lseek(fd, ep->e_phoff, SEEK_SET);
 	elf_bss = 0;
 	elf_brk = 0;
+
+	for (i = 0; i < ep->e_phnum; i++) {
+		if (read(fd, &ph_table[i], sizeof(Elf64_Phdr)) < 0) {
+			fprintf(stderr, "read erorr on phdr\n");
+			return -1;
+		}
+	}
+
+	for (; i < PH_TABLE_SIZE; i++)
+		ph_table[i].p_type = PT_NULL;
+
 	for (i = 0; i < ep->e_phnum; i++) {
 		int elf_prot = 0, elf_flags;
 		unsigned long k;
 		Elf64_Addr vaddr;
 
-		memset(&phdr, 0, sizeof(Elf64_Phdr));
-		if (read(fd, &phdr, sizeof(Elf64_Phdr)) < 0) {
-			fprintf(stderr, "read erorr on phdr\n");
-			return -1;
-		}
-		
-		if (phdr.p_type != PT_LOAD)
+		if (ph_table[i].p_type != PT_LOAD)
 			continue;
 
-		if (elf_brk > elf_bss) {
-			if (map_bss(elf_bss, elf_brk, bss_prot) < 0) {
-				fprintf(stderr, "map_bss error\n");
-				return -1;
-			}
-
-			padzero(elf_bss);
-		}
-
-		if (phdr.p_flags & PF_R)
+		if (ph_table[i].p_flags & PF_R)
 			elf_prot |= PROT_READ;
-		if (phdr.p_flags & PF_W)
+		if (ph_table[i].p_flags & PF_W)
 			elf_prot |= PROT_WRITE;
-		if (phdr.p_flags & PF_X)
+		if (ph_table[i].p_flags & PF_X)
 			elf_prot |= PROT_EXEC;
-		
+
 		elf_flags = MAP_PRIVATE | MAP_FIXED | MAP_EXECUTABLE;
 
-		vaddr = phdr.p_vaddr;
+		vaddr = ph_table[i].p_vaddr;
 
-		if (elf_map(vaddr, elf_prot, elf_flags, fd, &phdr) < 0) {
+		if (elf_map(vaddr, elf_prot, elf_flags, fd, &ph_table[i]) < 0) {
 			fprintf(stderr, "elf_map error\n");
 			return -1;
 		}
-		
-		k = phdr.p_vaddr + phdr.p_filesz;
+
+		k = ph_table[i].p_vaddr + ph_table[i].p_filesz;
 		if (k > elf_bss)
 			elf_bss = k;
 
-		k = phdr.p_vaddr + phdr.p_memsz;
+		k = ph_table[i].p_vaddr + ph_table[i].p_memsz;
 		if (k > elf_brk) {
 			bss_prot = elf_prot;
 			elf_brk = k;
 		}
+
+		if (ph_table[i].p_type == PT_LOAD)
+			break;
 	}
 
-	if (map_bss(elf_bss, elf_brk, bss_prot) < 0) {
-		fprintf(stderr, "bss map error\n");
-		return -1;
-	}
 	if (elf_bss != elf_brk)
 		padzero(elf_bss);
 
@@ -160,29 +163,29 @@ int load_elf_binary(int fd, Elf64_Ehdr *ep, int argc, char *envp[])
 void *elf_map(Elf64_Addr addr, int prot, int type, 
 		int fd, Elf64_Phdr *pp)
 {
-	unsigned long size = pp->p_filesz + ELF_PAGEOFFSET(pp->p_vaddr);
+	unsigned long size = PAGE_SIZE;
 	unsigned long off = pp->p_offset - ELF_PAGEOFFSET(pp->p_vaddr);
+	int diff;
+
 	addr = ELF_PAGESTART(addr);
-	size = ELF_PAGEALIGN(size);
+	diff = addr - ELF_PAGESTART(pp->p_vaddr);
+	off += diff;
 
 	if (!size)
 		return (void *) addr;
-	
+
 	return mmap((void *) addr, size, prot, type, fd, off);
 }
 
-int map_bss(unsigned long start, unsigned long end, int prot)
+int map_bss(unsigned long addr, int prot)
 {
 	int type;
 
-	start = ELF_PAGEALIGN(start);
-	end = ELF_PAGEALIGN(end);
+	addr = ELF_PAGESTART(addr);
 	type = MAP_FIXED | MAP_ANONYMOUS | MAP_PRIVATE;
-	if (end > start) {
-		return (int) mmap((void *) start, end - start, prot, type, -1, 0);
-	}
 
-	return 0;
+	return (int) mmap((void *) addr, PAGE_SIZE, prot, type, -1, 0);
+
 }
 
 int padzero(unsigned long elf_bss)
@@ -322,4 +325,61 @@ int jump_to_entry(Elf64_Addr elf_entry)
 
 	printf("never reached\n");
 	return 0;
+}
+
+void segv_handler(int signo, siginfo_t *info, void *context)
+{
+	bool is_feasible = false;
+	int elf_brk = 0, elf_bss = 0;
+	int elf_prot = 0, elf_flags;
+	Elf64_Addr addr = (Elf64_Addr) info->si_addr;
+	Elf64_Phdr *pp;
+	int i;
+
+//	fprintf(stderr, "fault at %p\n", info->si_addr);
+	for (i = 0; i < PH_TABLE_SIZE; i++) {
+		pp = &ph_table[i];
+		Elf64_Addr k;
+		if (pp->p_type != PT_LOAD)
+			continue;
+
+		if ((pp->p_vaddr <= addr) && addr <= (pp->p_vaddr + pp->p_memsz)) {
+			is_feasible = true;
+			k = pp->p_vaddr + pp->p_filesz;
+			elf_bss = k;
+			k = pp->p_vaddr + pp->p_memsz;
+			elf_brk = k;
+			break;
+		}
+	}
+
+	if (!is_feasible) {
+		fprintf(stderr, "Unvalid memory reference\n");
+		exit(EXIT_FAILURE);
+	}
+
+	if (pp->p_flags & PF_R)
+		elf_prot |= PROT_READ;
+	if (pp->p_flags & PF_W)
+		elf_prot |= PROT_WRITE;
+	if (pp->p_flags & PF_X)
+		elf_prot |= PROT_EXEC;
+
+	if ((pp->p_vaddr <= addr) && (addr <= pp->p_vaddr + pp->p_filesz) ||
+		(ELF_PAGEALIGN(elf_bss) == ELF_PAGEALIGN(addr))) {
+		elf_flags = MAP_PRIVATE | MAP_FIXED | MAP_EXECUTABLE;
+		if (elf_map(addr, elf_prot, elf_flags, fd, pp) < 0) {
+			fprintf(stderr, "elf_map error\n");
+			exit(EXIT_FAILURE);
+		}
+
+		if (elf_bss != elf_brk)
+			padzero(elf_bss);
+	}
+	else {
+		if (map_bss(addr, elf_prot) < 0) {
+			fprintf(stderr, "bss map error\n");
+			exit(EXIT_FAILURE);
+		}
+	}
 }

@@ -4,6 +4,7 @@
 #define	ELFMAG		"\177ELF"
 #define	SELFMAG		4
 
+#define PH_TABLE_SIZE	15
 #define STACK_SIZE	(PAGE_SIZE * 10)
 #define STACK_START	0x10000000	
 #define STACK_TOP	(STACK_START + STACK_SIZE)
@@ -29,10 +30,11 @@ void show_elf_header(Elf64_Ehdr *elf_header);
 int load_elf_binary(int fd, Elf64_Ehdr *ep, int argc, char *envp[]);
 void *elf_map(Elf64_Addr addr, int prot, int type, 
 		int fd, Elf64_Phdr *pp);
-int map_bss(unsigned long start, unsigned long end, int prot);
+int map_bss(unsigned long start, int prot);
 int padzero(unsigned long elf_bss);
 int create_elf_tables(int argc, char *envp[]);
 int init_stack(int argc, char *argv[]);
 int jump_to_entry(Elf64_Addr elf_entry);
+void segv_handler(int signo, siginfo_t *info, void *context);
 
 #endif

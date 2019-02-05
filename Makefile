@@ -1,9 +1,17 @@
 OPTION = -Wall -Wl,-Ttext-segment=0x30000000
 
+all : apager dpager
+
 apager : apager.o
 	gcc $(OPTION) -o apager $<
 
 apager.o : apager.c apager.h
+	gcc -Wall -Wextra -g -O0 -c $<
+
+dpager : dpager.o
+	gcc $(OPTION) -o dpager $<
+
+dpager.o : dpager.c dpager.h
 	gcc -Wall -Wextra -g -O0 -c $<
 
 clean:
