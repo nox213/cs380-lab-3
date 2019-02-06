@@ -323,8 +323,7 @@ int jump_to_entry(Elf64_Addr elf_entry)
 void segv_handler(int signo, siginfo_t *info, void *context)
 {
 	bool is_feasible = false;
-	int elf_brk = 0, elf_bss = 0;
-	int elf_prot = 0, elf_flags;
+	int elf_prot = 0;
 	Elf64_Addr addr = (Elf64_Addr) info->si_addr;
 	Elf64_Phdr *pp;
 	int i;
@@ -332,16 +331,11 @@ void segv_handler(int signo, siginfo_t *info, void *context)
 //	fprintf(stderr, "fault at %p\n", info->si_addr);
 	for (i = 0; i < PH_TABLE_SIZE; i++) {
 		pp = &ph_table[i];
-		Elf64_Addr k;
 		if (pp->p_type != PT_LOAD)
 			continue;
 
 		if ((pp->p_vaddr <= addr) && addr <= (pp->p_vaddr + pp->p_memsz)) {
 			is_feasible = true;
-			k = pp->p_vaddr + pp->p_filesz;
-			elf_bss = k;
-			k = pp->p_vaddr + pp->p_memsz;
-			elf_brk = k;
 			break;
 		}
 	}
