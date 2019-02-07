@@ -9,7 +9,7 @@
 #include <sys/types.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include "../include/dpager.h"
+#include "dpager.h"
 
 char *sp, *top, *stack_bottom;
 char *arg_start, *arg_end, *env_start, *env_end;

@@ -24,6 +24,7 @@ int main(void)
 
 	int ret = add(a, b);
 	printf("Result: %d\n", ret);
+	printf("q: %d t: %d c: %d\n", q, t, c);
 
 	return 0;
 }

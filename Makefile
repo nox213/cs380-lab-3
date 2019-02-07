@@ -1,4 +1,5 @@
 OPTION = -Wall -Wl,-Ttext-segment=0x30000000
+OPTION2 = -Wall -Wextra -g -O0 -I ./include
 
 all : apager dpager hpager
 
@@ -6,19 +7,19 @@ apager : apager.o
 	gcc $(OPTION) -o apager $<
 
 apager.o : ./src/apager.c ./include/apager.h
-	gcc -Wall -Wextra -g -O0 -c $<
+	gcc $(OPTION2) -c $<
 
 dpager : dpager.o
 	gcc $(OPTION) -o dpager $<
 
 dpager.o : ./src/dpager.c ./include/dpager.h
-	gcc -Wall -Wextra -g -O0 -c $<
+	gcc  $(OPTION2) -c $<
 
 hpager : hpager.o
 	gcc $(OPTION) -o hpager $<
 
 hpager.o : ./src/hpager.c ./include/hpager.h
-	gcc -Wall -Wextra -g -O0 -c $<
+	gcc $(OPTION2) -c $<
 
 test:
 	gcc test1.c -o test1 -static
