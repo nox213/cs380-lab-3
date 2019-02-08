@@ -32,7 +32,7 @@ void *elf_map(Elf64_Addr addr, int prot, int type,
 		int fd, Elf64_Phdr *pp);
 int map_bss(unsigned long addr, int prot, int page_num);
 int padzero(unsigned long elf_bss);
-int create_elf_tables(int argc, char *envp[]);
+int create_elf_tables(int argc, char *envp[], Elf64_Ehdr *ep);
 int init_stack(int argc, char *argv[]);
 int jump_to_entry(Elf64_Addr elf_entry);
 void segv_handler(int signo, siginfo_t *info, void *context);

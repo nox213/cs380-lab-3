@@ -152,7 +152,7 @@ int load_elf_binary(int fd, Elf64_Ehdr *ep, int argc, char *envp[])
 
 	elf_entry = ep->e_entry;
 
-	create_elf_tables(argc, envp);
+	create_elf_tables(argc, envp, ep);
 	jump_to_entry(elf_entry);
 
 	return 0;
@@ -195,7 +195,7 @@ int padzero(unsigned long elf_bss)
 	return 0;
 }
 
-int create_elf_tables(int argc, char *envp[])
+int create_elf_tables(int argc, char *envp[], Elf64_Ehdr *ep)
 {
 	int items, envc = 0;
 	int i;
@@ -216,6 +216,10 @@ int create_elf_tables(int argc, char *envp[])
 		elf_info[ei_index] = *auxv;
 		if (auxv->a_type == AT_PHDR)
 			elf_info[ei_index].a_un.a_val = 0;
+		else if (auxv->a_type == AT_ENTRY)
+			elf_info[ei_index].a_un.a_val = ep->e_entry;
+		else if (auxv->a_type == AT_PHNUM)
+			elf_info[ei_index].a_un.a_val = ep->e_phnum;
 
 	}
 
