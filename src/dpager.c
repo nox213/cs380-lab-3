@@ -12,8 +12,8 @@
 #include <unistd.h>
 #include "dpager.h"
 
-uint8_t *sp, *top, *stack_bottom;
-uint8_t *arg_start, *arg_end, *env_start, *env_end;
+int8_t *sp, *top, *stack_bottom;
+int8_t *arg_start, *arg_end, *env_start, *env_end;
 Elf64_Phdr ph_table[PH_TABLE_SIZE];
 int fd;
 
@@ -92,7 +92,6 @@ void show_elf_header(Elf64_Ehdr *ep)
 
 int load_elf_binary(int fd, Elf64_Ehdr *ep, int argc, char *envp[])
 {
-	Elf64_Phdr phdr;
 	Elf64_Addr elf_entry;
 	unsigned long elf_bss, elf_brk;
 	int bss_prot = 0;
@@ -206,13 +205,13 @@ int create_elf_tables(int argc, char *envp[], Elf64_Ehdr *ep)
 {
 	int items, envc = 0;
 	int i;
-	char *p;
+	int8_t *p;
 	Elf64_auxv_t elf_info[AT_VECTOR_SIZE];
 	Elf64_auxv_t *auxv;
 	int ei_index = 0;
 
 	memset(elf_info, 0, sizeof(elf_info));
-	sp = (char *) arch_align_stack(sp);
+	sp = (int8_t *) arch_align_stack(sp);
 
 
 	/* Copy Loaders AT_VECTOR */
@@ -231,11 +230,11 @@ int create_elf_tables(int argc, char *envp[], Elf64_Ehdr *ep)
 	}
 
 	ei_index += 2;
-	sp = (char *) STACK_ADD(sp, ei_index * 2);
+	sp = (int8_t *) STACK_ADD(sp, ei_index * 2);
 
 	envc = 2;
 	items = (argc + 1) + (envc + 1) + 1;
-	sp = (char *) STACK_ROUND(sp, items);
+	sp = (int8_t *) STACK_ROUND(sp, items);
 	stack_bottom = sp;
 
 
