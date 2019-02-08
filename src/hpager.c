@@ -12,7 +12,7 @@
 #include <unistd.h>
 #include "hpager.h"
 
-int8_t *sp, *top, *stack_bottom;
+int8_t *sp, *stack_top;
 int8_t *arg_start, *arg_end, *env_start, *env_end;
 Elf64_Phdr ph_table[PH_TABLE_SIZE];
 int fd;
@@ -222,13 +222,14 @@ int create_elf_tables(int argc, char *envp[], Elf64_Ehdr *ep)
 
 	}
 
+	/* Advance past the AT_NULL entry.  */
 	ei_index += 2;
 	sp = (int8_t *) STACK_ADD(sp, ei_index * 2);
 
 	envc = 2;
 	items = (argc + 1) + (envc + 1) + 1;
 	sp = (int8_t *) STACK_ROUND(sp, items);
-	stack_bottom = sp;
+	stack_top = sp;
 
 
 
@@ -318,7 +319,7 @@ int jump_to_entry(Elf64_Addr elf_entry)
 	asm("movq $0, %rbx");
 	asm("movq $0, %rcx");
 	asm("movq $0, %rdx");
-	asm("movq %0, %%rsp" : : "r" (stack_bottom));
+	asm("movq %0, %%rsp" : : "r" (stack_top));
 	asm("jmp *%0" : : "c" (elf_entry));
 
 	printf("never reached\n");
