@@ -20,7 +20,7 @@ int main(void)
 	int a, b;
 	
 	a = 3;
-	b = 4;
+	b = c + 5;;
 
 	int ret = add(a, b);
 	printf("Result: %d\n", ret);

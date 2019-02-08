@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
 #include <stdlib.h>
@@ -11,8 +12,8 @@
 #include <unistd.h>
 #include "dpager.h"
 
-char *sp, *top, *stack_bottom;
-char *arg_start, *arg_end, *env_start, *env_end;
+uint8_t *sp, *top, *stack_bottom;
+uint8_t *arg_start, *arg_end, *env_start, *env_end;
 Elf64_Phdr ph_table[PH_TABLE_SIZE];
 int fd;
 
@@ -203,7 +204,7 @@ int padzero(unsigned long elf_bss)
 
 int create_elf_tables(int argc, char *envp[])
 {
-	int items;
+	int items, envc = 0;
 	int i;
 	char *p;
 	Elf64_auxv_t elf_info[AT_VECTOR_SIZE];
@@ -228,7 +229,8 @@ int create_elf_tables(int argc, char *envp[])
 	ei_index += 2;
 	sp = (char *) STACK_ADD(sp, ei_index * 2);
 
-	items = (argc + 1) + (3) + 1;
+	envc = 2;
+	items = (argc + 1) + (envc + 1) + 1;
 	sp = (char *) STACK_ROUND(sp, items);
 	stack_bottom = sp;
 
@@ -255,7 +257,7 @@ int create_elf_tables(int argc, char *envp[])
 
 	/* Populate list of envp pointers back to envp strings. */
 	p = env_start;
-	for (i = 0; i < 2; i++) {
+	for (i = 0; i < envc; i++) {
 		size_t len;
 
 		*((unsigned long *) sp) = (unsigned long) p;
