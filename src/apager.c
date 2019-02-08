@@ -174,13 +174,13 @@ void *elf_map(Elf64_Addr addr, int prot, int type,
 
 int map_bss(unsigned long start, unsigned long end, int prot)
 {
-	int type;
+	int flags;
 
 	start = ELF_PAGEALIGN(start);
 	end = ELF_PAGEALIGN(end);
-	type = MAP_FIXED | MAP_ANONYMOUS | MAP_PRIVATE;
+	flags = MAP_FIXED | MAP_ANONYMOUS | MAP_PRIVATE;
 	if (end > start) {
-		return (int) mmap((void *) start, end - start, prot, type, -1, 0);
+		return (int) mmap((void *) start, end - start, prot, flags, -1, 0);
 	}
 
 	return 0;

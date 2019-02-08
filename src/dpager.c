@@ -180,12 +180,12 @@ void *elf_map(Elf64_Addr addr, int prot, int type,
 
 int map_bss(unsigned long addr, int prot)
 {
-	int type;
+	int flags;
 
 	addr = ELF_PAGESTART(addr);
-	type = MAP_FIXED | MAP_ANONYMOUS | MAP_PRIVATE;
+	flags = MAP_FIXED | MAP_ANONYMOUS | MAP_PRIVATE;
 
-	return (int) mmap((void *) addr, PAGE_SIZE, prot, type, -1, 0);
+	return (int) mmap((void *) addr, PAGE_SIZE, prot, flags, -1, 0);
 
 }
 

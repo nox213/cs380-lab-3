@@ -173,13 +173,13 @@ void *elf_map(Elf64_Addr addr, int prot, int type,
 
 int map_bss(unsigned long addr, int prot, int page_num)
 {
-	int type;
+	int flags;
 
 	addr = ELF_PAGESTART(addr);
-	type = MAP_FIXED | MAP_ANONYMOUS | MAP_PRIVATE;
+	flags = MAP_FIXED | MAP_ANONYMOUS | MAP_PRIVATE;
 
 	return (int) mmap((void *) addr, page_num * PAGE_SIZE, prot, 
-			type, -1, 0);
+			flags, -1, 0);
 }
 
 int padzero(unsigned long elf_bss)
